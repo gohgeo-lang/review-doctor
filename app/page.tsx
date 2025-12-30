@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import classNames from "classnames";
 
 type Tone =
@@ -710,7 +717,7 @@ export default function HomePage() {
   const saveSnippet = (
     value: string,
     current: string[],
-    setter: (items: string[]) => void,
+    setter: Dispatch<SetStateAction<string[]>>,
     label: string,
     opts?: { silent?: boolean }
   ) => {
@@ -723,7 +730,10 @@ export default function HomePage() {
     }
   };
 
-  const removeSnippet = (target: string, setter: (items: string[]) => void) => {
+  const removeSnippet = (
+    target: string,
+    setter: Dispatch<SetStateAction<string[]>>
+  ) => {
     setter((prev) => prev.filter((item) => item !== target));
   };
 
@@ -839,7 +849,7 @@ export default function HomePage() {
     setIntroText(tpl.introText);
     setOutroText(tpl.outroText);
     addToast({ type: "info", message: `"${tpl.name}" 템플릿을 불러왔어요.` });
-    setTemplateModal(false);
+    setTemplateDrawerOpen(false);
   };
 
   const deleteTemplate = (id: string) => {
