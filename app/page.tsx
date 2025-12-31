@@ -528,12 +528,21 @@ export default function HomePage() {
       if (introStored) setSavedIntros(JSON.parse(introStored));
       if (outroStored) setSavedOutros(JSON.parse(outroStored));
       if (extraStored) setSavedExtras(JSON.parse(extraStored));
-      if (templateStored) setTemplates(JSON.parse(templateStored));
-      if (recentStored) setRecentReplies(JSON.parse(recentStored));
-    } catch {
-      // ignore broken storage
+    if (templateStored) {
+      const parsed = JSON.parse(templateStored);
+      const migrated = Array.isArray(parsed)
+        ? parsed.map((tpl: any) => ({
+            ...tpl,
+            storeName: tpl?.storeName ?? "",
+          }))
+        : [];
+      setTemplates(migrated);
     }
-  }, []);
+    if (recentStored) setRecentReplies(JSON.parse(recentStored));
+  } catch {
+    // ignore broken storage
+  }
+}, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -550,10 +559,19 @@ export default function HomePage() {
     window.localStorage.setItem("savedExtras", JSON.stringify(savedExtras));
   }, [savedExtras]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem("savedTemplatesV1", JSON.stringify(templates));
-  }, [templates]);
+useEffect(() => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem("savedTemplatesV1", JSON.stringify(templates));
+}, [templates]);
+
+useEffect(() => {
+  if (replies && replies.length > 0 && generateRef.current) {
+    generateRef.current.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }
+}, [replies]);
 
   const dismissTutorial = () => {};
 
@@ -752,6 +770,14 @@ export default function HomePage() {
         addToast({ type: "error", message: "답글이 생성되지 않았습니다." });
       } else {
         addToast({ type: "success", message: "답글을 생성했습니다." });
+        setTimeout(() => {
+          if (generateRef.current) {
+            generateRef.current.scrollIntoView({
+              behavior: "smooth",
+              block: "start",
+            });
+          }
+        }, 50);
       }
     } catch (err) {
       const msg = "네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
