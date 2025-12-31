@@ -22,6 +22,7 @@ type RequestBody = {
   replyTypes?: string[];
   generateIntro?: boolean;
   generateOutro?: boolean;
+  storeName?: string;
 };
 
 const DEFAULT_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -158,6 +159,7 @@ export async function POST(request: Request) {
   const outroText = body.outroText?.trim();
   const generateIntro = Boolean(body.generateIntro);
   const generateOutro = Boolean(body.generateOutro);
+  const storeName = body.storeName?.trim();
   const introHint = generateIntro ? toHints(introText) : introText;
   const outroHint = generateOutro ? toHints(outroText) : outroText;
   const replyTypes = (body.replyTypes || [])
@@ -197,6 +199,10 @@ export async function POST(request: Request) {
     toneRuleText || "- 톤에 맞춰 일관된 어조를 유지",
     "- 업종에 맞는 현실적인 표현 사용",
     services ? `- 주요 상품/서비스 참고: ${services}` : "- 주요 상품/서비스 정보 없음",
+    storeName
+      ? `- 매장명은 intro에 1회 자연스럽게 포함: "저희 ${storeName}" 형태, 과도한 반복 금지`
+      : "- 매장명 정보 없음",
+    "- 배달/온라인 쇼핑/홈쇼핑/스마트스토어 등 비내점 업종이면 '방문/내점' 표현 금지, '다음 주문/배송/재구매'로 유도",
     "- 과장/허위 보상/환불 약속 금지",
     "- 법률/의료 조언 금지",
     "- 1인칭 매장 시점 유지: '저희/우리'로 말하고 제3자/AI/대행 언급 금지",
@@ -230,6 +236,7 @@ export async function POST(request: Request) {
     storeTone
       ? `기타 요청사항(storeTone, 최우선): ${storeTone}`
       : "기타 요청사항(storeTone): (없음)",
+    storeName ? `매장명: ${storeName}` : "매장명: (없음)",
     generateIntro
       ? [
           "머릿말 자동 생성: 톤/업종에 맞는 1문장 인사(15~30자).",
