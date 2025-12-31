@@ -494,6 +494,7 @@ export default function HomePage() {
   const [openTemplateInfo, setOpenTemplateInfo] =
     useState<TemplateConfig | null>(null);
   const [templateDrawerOpen, setTemplateDrawerOpen] = useState(true);
+  const [autoApply, setAutoApply] = useState(false);
   const industryRef = useRef<HTMLDivElement | null>(null);
   const reviewRef = useRef<HTMLDivElement | null>(null);
   const generateRef = useRef<HTMLDivElement | null>(null);
@@ -572,12 +573,6 @@ export default function HomePage() {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 3000);
   };
-
-  const canSubmit =
-    reviewsText.trim().length > 0 &&
-    effectiveIndustry.length > 0 &&
-    selectedReplyTypes.length > 0 &&
-    selectedReplyTypes.length <= 3;
 
   const recommendTypes = (text: string) => {
     const lower = text.toLowerCase();
@@ -660,6 +655,38 @@ export default function HomePage() {
     return "담백형";
   }, [reviewsText]);
 
+  useEffect(() => {
+    // 자동 추천 적용 시, 추천 톤/유형을 UI에도 반영
+    if (!autoApply) return;
+    if (recommendedTone) {
+      setTone(recommendedTone);
+    }
+    if (recommendedTypes.length > 0) {
+      setSelectedReplyTypes(recommendedTypes.slice(0, 3));
+    }
+  }, [autoApply, recommendedTone, recommendedTypes]);
+
+  const effectiveReplyTypesForSubmit = useMemo(() => {
+    if (autoApply) {
+      if (recommendedTypes.length > 0) return recommendedTypes.slice(0, 3);
+      if (selectedReplyTypes.length > 0)
+        return selectedReplyTypes.slice(0, 3);
+      return [replyTypeOptions[0].id];
+    }
+    return selectedReplyTypes.slice(0, 3);
+  }, [autoApply, recommendedTypes, selectedReplyTypes]);
+
+  const effectiveToneForSubmit = useMemo(() => {
+    if (autoApply && recommendedTone) return recommendedTone;
+    return tone;
+  }, [autoApply, recommendedTone, tone]);
+
+  const canSubmit =
+    reviewsText.trim().length > 0 &&
+    effectiveIndustry.length > 0 &&
+    effectiveReplyTypesForSubmit.length > 0 &&
+    effectiveReplyTypesForSubmit.length <= 3;
+
   const handleSubmit = async () => {
     if (!canSubmit) {
       setError("리뷰와 업종, 답글 유형(최소 1개, 최대 3개)을 선택해주세요.");
@@ -677,14 +704,14 @@ export default function HomePage() {
         body: JSON.stringify({
           industry: effectiveIndustry,
           reviewsText,
-          tone,
+          tone: effectiveToneForSubmit,
           storeTone,
           services: servicesText,
           introText,
           outroText,
           generateIntro,
           generateOutro,
-          replyTypes: selectedReplyTypes,
+          replyTypes: effectiveReplyTypesForSubmit,
         }),
       });
 
@@ -1559,24 +1586,6 @@ export default function HomePage() {
           onClick={() => setTemplateDrawerOpen(false)}
         />
       )}
-      <div
-        className="fixed inset-x-0 bottom-0 z-40 flex flex-col items-center gap-2 px-4 pb-6"
-        ref={generateRef}
-      >
-        <button
-          className="btn-primary shadow-2xl w-full max-w-xl py-3 text-base rounded-full"
-          disabled={!canSubmit || loading}
-          onClick={handleSubmit}
-        >
-          {loading && (
-            <span className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-white align-middle" />
-          )}
-          {loading ? "생성 중..." : "답글 생성"}
-        </button>
-        <p className="text-xs text-slate-500">
-          리뷰 붙여넣기와 옵션을 확인한 뒤 눌러주세요.
-        </p>
-      </div>
       {toasts.length > 0 && (
         <div className="fixed inset-x-0 top-4 z-50 flex flex-col items-center gap-2 px-4">
           {toasts.map((toast) => (
@@ -1594,7 +1603,26 @@ export default function HomePage() {
           ))}
         </div>
       )}
-      <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col items-center gap-2 px-4 pb-6">
+      <div
+        className="fixed inset-x-0 bottom-0 z-40 flex flex-col items-center gap-2 px-4 pb-6"
+        ref={generateRef}
+      >
+        <div className="w-full max-w-xl flex items-center justify-center gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-slate-900"
+            checked={autoApply}
+            onChange={(e) => setAutoApply(e.target.checked)}
+          />
+          <span className="flex items-center gap-2 rounded-lg bg-white/70 px-2 py-1 shadow-sm backdrop-blur-sm">
+            <span>자동 추천 적용</span>
+            {autoApply && (
+              <span className="rounded-full bg-amber-100 px-2 py-[2px] text-[11px] font-semibold text-amber-800">
+                추천 톤/유형으로 바로 생성
+              </span>
+            )}
+          </span>
+        </div>
         <button
           className="btn-primary shadow-2xl w-full max-w-xl py-3 text-base rounded-full"
           disabled={!canSubmit || loading}

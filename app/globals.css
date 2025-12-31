@@ -32,6 +32,10 @@ body {
   @apply text-sm font-semibold text-slate-800;
 }
 
+.auto-apply-label {
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
 /* Override Next.js dev overlay toast position to match app toasts (top-center) */
 [data-nextjs-toast] {
   position: fixed !important;
