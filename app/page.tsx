@@ -334,6 +334,11 @@ const replyTypeKeywords: Record<string, string[]> = {
     "누가",
     "언제",
     "어디서",
+    "애매",
+    "좋지 않",
+    "별로",
+    "다시 안",
+    "이번엔",
   ],
   "해결 안내형": [
     "다시 조리",
@@ -344,6 +349,11 @@ const replyTypeKeywords: Record<string, string[]> = {
     "접수",
     "바로 조치",
     "대응",
+    "애매",
+    "좋지 않",
+    "별로",
+    "다시 안",
+    "이번엔",
   ],
   "재발 방지 약속형": [
     "개선",
@@ -491,6 +501,7 @@ export default function HomePage() {
   const [templateName, setTemplateName] = useState("");
   const [templateAddModal, setTemplateAddModal] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [recentReplies, setRecentReplies] = useState<Reply[]>([]);
   const [recentModalOpen, setRecentModalOpen] = useState(false);
@@ -499,9 +510,10 @@ export default function HomePage() {
     useState<TemplateConfig | null>(null);
   const [templateDrawerOpen, setTemplateDrawerOpen] = useState(true);
   const [autoApply, setAutoApply] = useState(false);
+  const topRef = useRef<HTMLDivElement | null>(null);
   const industryRef = useRef<HTMLDivElement | null>(null);
   const reviewRef = useRef<HTMLDivElement | null>(null);
-  const generateRef = useRef<HTMLDivElement | null>(null);
+  const resultRef = useRef<HTMLDivElement | null>(null);
   const templateToggleRef = useRef<HTMLButtonElement | null>(null);
   const handleIntroBlur = () =>
     saveSnippet(introText, savedIntros, setSavedIntros, "머릿말", {
@@ -565,8 +577,8 @@ useEffect(() => {
 }, [templates]);
 
 useEffect(() => {
-  if (replies && replies.length > 0 && generateRef.current) {
-    generateRef.current.scrollIntoView({
+  if (replies && replies.length > 0 && resultRef.current) {
+    resultRef.current.scrollIntoView({
       behavior: "smooth",
       block: "start",
     });
@@ -601,6 +613,24 @@ useEffect(() => {
 
   const recommendTypes = (text: string) => {
     const lower = text.toLowerCase();
+    const negativeHints = [
+      "불만",
+      "별로",
+      "애매",
+      "안 좋",
+      "좋지 않",
+      "실망",
+      "아쉬",
+      "나쁜",
+      "다시 안",
+      "다시는",
+      "이번엔",
+      "처음만큼",
+      "기대 이하",
+      "마감",
+      "상태",
+      "편차",
+    ];
     const scored = replyTypeOptions.map((option) => {
       const keywords = replyTypeKeywords[option.id] || [];
       const score = keywords.reduce(
@@ -609,19 +639,31 @@ useEffect(() => {
       );
       return { id: option.id, score };
     });
+    const hasNegative = negativeHints.some((k) => lower.includes(k));
     const sorted = scored
       .filter((item) => item.score > 0)
       .sort((a, b) => b.score - a.score)
       .map((item) => item.id);
 
-    if (sorted.length === 0) {
+    const negativePriority = hasNegative
+      ? [
+          "사실 확인형",
+          "해결 안내형",
+          "재발 방지 약속형",
+          "원인 설명형",
+          "보상 대신 대안 제시형",
+        ].filter((id) => replyTypeOptions.some((opt) => opt.id === id))
+      : [];
+
+    const merged = Array.from(new Set([...negativePriority, ...sorted]));
+
+    if (merged.length === 0) {
       return fallbackRecommended.filter((id) =>
         replyTypeOptions.some((opt) => opt.id === id)
       );
     }
 
-    // 보장: 사과·공감형이나 속도/품질/정책 등 네거티브 키워드가 많을 때는 긍정형 대신 관련 유형이 상위에 오도록 상위 3개 사용
-    return sorted.slice(0, 3);
+    return merged.slice(0, 3);
   };
 
   const recommendedTypes = useMemo(() => {
@@ -771,8 +813,8 @@ useEffect(() => {
       } else {
         addToast({ type: "success", message: "답글을 생성했습니다." });
         setTimeout(() => {
-          if (generateRef.current) {
-            generateRef.current.scrollIntoView({
+          if (resultRef.current) {
+            resultRef.current.scrollIntoView({
               behavior: "smooth",
               block: "start",
             });
@@ -860,6 +902,7 @@ useEffect(() => {
   };
 
   const toggleReplyType = (id: string) => {
+    setAutoApply(false);
     setSelectedReplyTypes((prev) => {
       if (prev.includes(id)) {
         const next = prev.filter((item) => item !== id);
@@ -1144,7 +1187,10 @@ useEffect(() => {
                   <button
                     key={option.id}
                     type="button"
-                    onClick={() => setTone(option.id)}
+                    onClick={() => {
+                      setAutoApply(false);
+                      setTone(option.id);
+                    }}
                     className={classNames(
                       "flex items-center justify-between rounded-xl border px-4 py-3 text-left text-sm font-semibold transition",
                       tone === option.id
@@ -1388,7 +1434,7 @@ useEffect(() => {
           <div className="flex flex-col gap-6">
             <div
               className="card p-6 flex flex-col gap-3 relative lg:sticky lg:top-2"
-              ref={generateRef}
+              ref={resultRef}
             >
               <div className="flex items-start justify-between">
                 <div>
@@ -1506,7 +1552,8 @@ useEffect(() => {
                     <div className="mt-2 flex justify-end">
                       <button
                         type="button"
-                        className="btn-primary px-3 py-1 text-xs"
+                        className="btn-primary px-3 py-1 text-xs disabled:opacity-60"
+                        disabled={feedbackSubmitting}
                       onClick={() => {
                         const msg = feedback.trim();
                         if (!msg) {
@@ -1516,6 +1563,7 @@ useEffect(() => {
                           });
                           return;
                         }
+                        setFeedbackSubmitting(true);
                         fetch("/api/feedback", {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
@@ -1524,6 +1572,18 @@ useEffect(() => {
                             path: typeof window !== "undefined" ? window.location.pathname : "/",
                             userAgent:
                               typeof navigator !== "undefined" ? navigator.userAgent : "",
+                            context: {
+                              industry,
+                              customIndustry,
+                              storeName,
+                              servicesText,
+                              tone,
+                              replyTypes: selectedReplyTypes,
+                              storeTone,
+                              introText,
+                              outroText,
+                              reviewsText,
+                            },
                           }),
                         })
                           .then(async (res) => {
@@ -1542,12 +1602,13 @@ useEffect(() => {
                               type: "error",
                               message: "피드백 저장에 실패했습니다. 잠시 후 다시 시도해주세요.",
                             });
-                          });
+                          })
+                          .finally(() => setFeedbackSubmitting(false));
                       }}
                     >
-                      피드백 제출
+                      {feedbackSubmitting ? "제출 중..." : "피드백 제출"}
                     </button>
-                    </div>
+                  </div>
                   </div>
                 </div>
               )}
@@ -1577,6 +1638,29 @@ useEffect(() => {
           </svg>
         </button>
       )}
+      <div className="fixed bottom-24 right-4 z-40 flex flex-col gap-2">
+        <button
+          type="button"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-slate-600 shadow-lg ring-1 ring-slate-200 hover:text-slate-900"
+          onClick={() => {
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
+          aria-label="맨 위로"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            className="h-10 w-10"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M5 15l7-7 7 7" />
+          </svg>
+        </button>
+      </div>
       <div
         className={classNames(
           "fixed inset-y-0 right-0 z-40 w-56 max-w-[240px] transform bg-white/50 transition-transform backdrop-blur-sm",
@@ -1806,10 +1890,7 @@ useEffect(() => {
           ))}
         </div>
       )}
-      <div
-        className="fixed inset-x-0 bottom-0 z-40 flex flex-col items-center gap-2 px-4 pb-6"
-        ref={generateRef}
-      >
+      <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col items-center gap-2 px-4 pb-6">
         <div className="w-full max-w-xl flex items-center justify-center gap-2 text-sm text-slate-700">
           <input
             type="checkbox"
@@ -1840,13 +1921,6 @@ useEffect(() => {
           리뷰 붙여넣기와 옵션을 확인한 뒤 눌러주세요.
         </p>
       </div>
-      {error && (
-        <div className="fixed inset-x-0 bottom-16 z-40 flex justify-center">
-          <div className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-2xl">
-            {error}
-          </div>
-        </div>
-      )}
       {openTemplateInfo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-card">

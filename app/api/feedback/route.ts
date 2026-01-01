@@ -5,6 +5,7 @@ type FeedbackBody = {
   message?: string;
   path?: string;
   userAgent?: string;
+  context?: Record<string, any>;
 };
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -15,6 +16,7 @@ export async function POST(request: Request) {
   const message = body.message?.trim();
   const path = body.path?.trim() || "/";
   const userAgent = body.userAgent?.trim() || "";
+  const context = body.context;
 
   if (!message) {
     return NextResponse.json({ error: "메시지를 입력해주세요." }, { status: 400 });
@@ -27,8 +29,11 @@ export async function POST(request: Request) {
 
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const payloadMessage = context
+      ? `${message}\n\n---context---\n${JSON.stringify(context)}`
+      : message;
     const { error } = await supabase.from("feedback").insert({
-      message,
+      message: payloadMessage,
       path,
       user_agent: userAgent,
     });
