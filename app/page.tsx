@@ -8,7 +8,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import classNames from "classnames";
+import { signIn, signOut, useSession } from "next-auth/react";
 
 type Tone =
   | "정중형"
@@ -25,6 +27,7 @@ type Tone =
 type Reply = {
   title: string;
   text: string;
+  createdAt?: string;
 };
 
 type Template = {
@@ -48,6 +51,7 @@ type TemplateConfig = {
   outroText: string;
 };
 
+type Plan = "free" | "plus" | "pro";
 type ReplyTypeOption = {
   id: string;
   label: string;
@@ -109,6 +113,21 @@ const InfoPopover = ({
   onClose,
 }: InfoPopoverProps) => {
   const ref = useRef<HTMLDivElement | null>(null);
+  const [portalEl, setPortalEl] = useState<HTMLElement | null>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number }>({
+    top: 0,
+    left: 0,
+  });
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const el = document.createElement("div");
+    document.body.appendChild(el);
+    setPortalEl(el);
+    return () => {
+      document.body.removeChild(el);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -121,6 +140,29 @@ const InfoPopover = ({
     document.addEventListener("mousedown", handleClick, true);
     return () => document.removeEventListener("mousedown", handleClick, true);
   }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (!isOpen || typeof window === "undefined") return;
+    const update = () => {
+      if (!ref.current) return;
+      const rect = ref.current.getBoundingClientRect();
+      const width = 288; // w-72
+      const padding = 8;
+      const left = Math.min(
+        Math.max(rect.left + rect.width / 2 - width / 2, padding),
+        window.innerWidth - width - padding
+      );
+      const top = rect.bottom + 8;
+      setCoords({ top, left });
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [isOpen]);
 
   return (
     <div className="relative inline-flex items-center" ref={ref}>
@@ -140,26 +182,20 @@ const InfoPopover = ({
       >
         i
       </button>
-      {isOpen && (
-        <div className="absolute left-0 top-6 z-50 w-72 rounded-xl border border-slate-200 bg-white p-4 shadow-2xl">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <p className="text-sm font-semibold text-slate-900">{title}</p>
-              <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                {description}
-              </p>
-            </div>
-            <button
-              type="button"
-              aria-label="닫기"
-              className="text-slate-500 hover:text-slate-700"
-              onClick={onClose}
-            >
-              ×
-            </button>
-          </div>
-        </div>
-      )}
+      {isOpen &&
+        portalEl &&
+        createPortal(
+          <div
+            className="fixed z-50 w-72 rounded-xl border border-slate-200 bg-white p-4 shadow-2xl"
+            style={{ top: coords.top, left: coords.left }}
+          >
+            <p className="text-sm font-semibold text-slate-900">{title}</p>
+            <p className="mt-1 text-xs leading-relaxed text-slate-600">
+              {description}
+            </p>
+          </div>,
+          portalEl
+        )}
     </div>
   );
 };
@@ -475,6 +511,11 @@ const replyTypeKeywords: Record<string, string[]> = {
 const fallbackRecommended = ["개인화 응대형", "사실 확인형", "안내형"];
 
 export default function HomePage() {
+  const [plan, setPlan] = useState<Plan>("free");
+  const { data: session, status: sessionStatus } = useSession();
+  const isAuthed = sessionStatus === "authenticated";
+  const userDisplayName =
+    session?.user?.name || session?.user?.email || "로그인 필요";
   const [industry, setIndustry] = useState("");
   const [customIndustry, setCustomIndustry] = useState("");
   const [storeName, setStoreName] = useState("");
@@ -503,6 +544,7 @@ export default function HomePage() {
   const [feedback, setFeedback] = useState("");
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [copiedRecentKey, setCopiedRecentKey] = useState<string | null>(null);
   const [recentReplies, setRecentReplies] = useState<Reply[]>([]);
   const [recentModalOpen, setRecentModalOpen] = useState(false);
   const [openPopover, setOpenPopover] = useState<string | null>(null);
@@ -528,6 +570,8 @@ export default function HomePage() {
       silent: true,
     });
 
+  // Portal not used; toasts render directly with high z-index
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -540,21 +584,21 @@ export default function HomePage() {
       if (introStored) setSavedIntros(JSON.parse(introStored));
       if (outroStored) setSavedOutros(JSON.parse(outroStored));
       if (extraStored) setSavedExtras(JSON.parse(extraStored));
-    if (templateStored) {
-      const parsed = JSON.parse(templateStored);
-      const migrated = Array.isArray(parsed)
-        ? parsed.map((tpl: any) => ({
-            ...tpl,
-            storeName: tpl?.storeName ?? "",
-          }))
-        : [];
-      setTemplates(migrated);
+      if (templateStored) {
+        const parsed = JSON.parse(templateStored);
+        const migrated = Array.isArray(parsed)
+          ? parsed.map((tpl: any) => ({
+              ...tpl,
+              storeName: tpl?.storeName ?? "",
+            }))
+          : [];
+        setTemplates(migrated);
+      }
+      if (recentStored) setRecentReplies(JSON.parse(recentStored));
+    } catch {
+      // ignore broken storage
     }
-    if (recentStored) setRecentReplies(JSON.parse(recentStored));
-  } catch {
-    // ignore broken storage
-  }
-}, []);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -571,19 +615,19 @@ export default function HomePage() {
     window.localStorage.setItem("savedExtras", JSON.stringify(savedExtras));
   }, [savedExtras]);
 
-useEffect(() => {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem("savedTemplatesV1", JSON.stringify(templates));
-}, [templates]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("savedTemplatesV1", JSON.stringify(templates));
+  }, [templates]);
 
-useEffect(() => {
-  if (replies && replies.length > 0 && resultRef.current) {
-    resultRef.current.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
-  }
-}, [replies]);
+  useEffect(() => {
+    if (replies && replies.length > 0 && resultRef.current) {
+      resultRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }
+  }, [replies]);
 
   const dismissTutorial = () => {};
 
@@ -595,7 +639,9 @@ useEffect(() => {
     [industry, customIndustry]
   );
 
-  const hasIndustry = effectiveIndustry.length > 0;
+  const hasIndustry =
+    (industry && industry !== "기타(직접입력)") ||
+    (industry === "기타(직접입력)" && customIndustry.trim().length > 0);
   const hasStoreName = storeName.trim().length > 0;
   const hasReviews = reviewsText.trim().length > 0;
   const hasTone = Boolean(tone);
@@ -722,31 +768,40 @@ useEffect(() => {
     return "담백형";
   }, [reviewsText]);
 
+  const toneOptionsForPlan = useMemo(
+    () =>
+      plan === "free"
+        ? toneOptions.filter((option) => option.id === "정중형")
+        : toneOptions,
+    [plan]
+  );
+
   useEffect(() => {
     // 자동 추천 적용 시, 추천 톤/유형을 UI에도 반영
     if (!autoApply) return;
     if (recommendedTone) {
-      setTone(recommendedTone);
+      setTone(plan === "free" ? "정중형" : recommendedTone);
     }
     if (recommendedTypes.length > 0) {
       setSelectedReplyTypes(recommendedTypes.slice(0, 3));
     }
-  }, [autoApply, recommendedTone, recommendedTypes]);
+  }, [autoApply, recommendedTone, recommendedTypes, plan]);
 
   const effectiveReplyTypesForSubmit = useMemo(() => {
+    if (plan === "free") return [replyTypeOptions[0].id];
     if (autoApply) {
       if (recommendedTypes.length > 0) return recommendedTypes.slice(0, 3);
-      if (selectedReplyTypes.length > 0)
-        return selectedReplyTypes.slice(0, 3);
+      if (selectedReplyTypes.length > 0) return selectedReplyTypes.slice(0, 3);
       return [replyTypeOptions[0].id];
     }
     return selectedReplyTypes.slice(0, 3);
-  }, [autoApply, recommendedTypes, selectedReplyTypes]);
+  }, [autoApply, recommendedTypes, selectedReplyTypes, plan]);
 
   const effectiveToneForSubmit = useMemo(() => {
+    if (plan === "free") return "정중형";
     if (autoApply && recommendedTone) return recommendedTone;
     return tone;
-  }, [autoApply, recommendedTone, tone]);
+  }, [autoApply, recommendedTone, tone, plan]);
 
   const canSubmit =
     reviewsText.trim().length > 0 &&
@@ -755,6 +810,10 @@ useEffect(() => {
     effectiveReplyTypesForSubmit.length <= 3;
 
   const handleSubmit = async () => {
+    if (!isAuthed) {
+      addToast({ type: "error", message: "구글 로그인 후 이용해주세요." });
+      return;
+    }
     if (!canSubmit) {
       setError("리뷰와 업종, 답글 유형(최소 1개, 최대 3개)을 선택해주세요.");
       return;
@@ -793,11 +852,14 @@ useEffect(() => {
         return;
       }
 
-      const nextReplies = data.replies ?? [];
+      const now = new Date().toISOString();
+      const nextReplies =
+        (data.replies ?? []).map((r: Reply) => ({ ...r, createdAt: now })) ||
+        [];
       setReplies(nextReplies);
       if (nextReplies.length > 0) {
         setRecentReplies((prev) => {
-          const merged = [...nextReplies, ...prev].slice(0, 20);
+          const merged = [...nextReplies, ...prev].slice(0, 10);
           if (typeof window !== "undefined") {
             window.localStorage.setItem(
               "recentReplies",
@@ -828,6 +890,39 @@ useEffect(() => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCopyRecent = async (text: string, key: string) => {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      }
+      setCopiedRecentKey(key);
+      addToast({ type: "success", message: "복사했습니다." });
+    } catch {
+      addToast({
+        type: "error",
+        message: "복사에 실패했습니다. 브라우저 권한을 확인해주세요.",
+      });
+    } finally {
+      setTimeout(() => {
+        setCopiedRecentKey((current) => (current === key ? null : current));
+      }, 2000);
+    }
+  };
+
+  const removeRecent = (key: string) => {
+    setRecentReplies((prev) => {
+      const next = prev.filter(
+        (reply, idx) =>
+          `${idx}-${reply.title}-${reply.text.slice(0, 8)}` !== key
+      );
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("recentReplies", JSON.stringify(next));
+      }
+      return next;
+    });
+    addToast({ type: "info", message: "최근 생성 기록을 삭제했습니다." });
   };
 
   const saveSnippet = (
@@ -863,7 +958,10 @@ useEffect(() => {
       (category === "outro" && savedOutros.length === 0) ||
       (category === "extra" && savedExtras.length === 0)
     ) {
-      setError("저장된 항목이 없습니다. 먼저 저장을 눌러주세요.");
+      addToast({
+        type: "info",
+        message: "저장된 항목이 없습니다. 먼저 저장을 눌러주세요.",
+      });
       return;
     }
     setError(null);
@@ -902,6 +1000,13 @@ useEffect(() => {
   };
 
   const toggleReplyType = (id: string) => {
+    if (plan === "free" && id !== replyTypeOptions[0].id) {
+      addToast({
+        type: "info",
+        message: "무료 플랜에서는 개인화 응대형만 사용할 수 있습니다.",
+      });
+      return;
+    }
     setAutoApply(false);
     setSelectedReplyTypes((prev) => {
       if (prev.includes(id)) {
@@ -984,16 +1089,33 @@ useEffect(() => {
     addToast({ type: "info", message: "템플릿을 삭제했어요." });
   };
 
-  const handleCopy = async (text: string, index: number) => {
+  const handleCopy = async (
+    text: string,
+    index: number,
+    opts?: { recentKey?: string }
+  ) => {
     try {
       await navigator.clipboard.writeText(text);
       setCopiedIndex(index);
+      if (opts?.recentKey) setCopiedRecentKey(opts.recentKey);
+      addToast({ type: "success", message: "복사했습니다." });
       setTimeout(
         () => setCopiedIndex((current) => (current === index ? null : current)),
         2000
       );
-    } catch {
+      if (opts?.recentKey) {
+        setTimeout(() => {
+          setCopiedRecentKey((current) =>
+            current === opts.recentKey ? null : current
+          );
+        }, 2000);
+      }
+    } catch (err) {
       setError("클립보드 복사에 실패했습니다. 브라우저 권한을 확인해주세요.");
+      addToast({
+        type: "error",
+        message: "복사에 실패했습니다. 클립보드 권한을 확인해주세요.",
+      });
     }
   };
 
@@ -1008,15 +1130,45 @@ useEffect(() => {
     <>
       <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-6 py-12">
         <header className="flex flex-col gap-3">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-[0.18em]">
-            리뷰답글에이전트
-          </p>
-          <h1 className="text-3xl font-bold text-slate-900">
-            사장님! 리뷰 답글, 그만 고민하세요!
-          </h1>
-          <p className="text-base text-slate-600">
-            리뷰 복붙하고 답글 생성하기로 10초면 끝!
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-[0.18em]">
+                리뷰답글에이전트
+              </p>
+              <h1 className="text-3xl font-bold text-slate-900">
+                사장님! 리뷰 답글, 그만 고민하세요!
+              </h1>
+              <p className="text-base text-slate-600">
+                리뷰 복붙하고 답글 생성하기로 10초면 끝!
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {isAuthed ? (
+                <>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                    {userDisplayName}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    onClick={() => signOut()}
+                    disabled={sessionStatus === "loading"}
+                  >
+                    로그아웃
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => signIn("google", { callbackUrl: "/" })}
+                  disabled={sessionStatus === "loading"}
+                >
+                  로그인/회원가입
+                </button>
+              )}
+            </div>
+          </div>
         </header>
 
         <section className="grid grid-cols-1 gap-6 lg:grid-cols-[1.1fr,0.9fr]">
@@ -1029,6 +1181,17 @@ useEffect(() => {
                 >
                   업종 선택
                   <StatusChip done={hasIndustry} />
+                  <InfoPopover
+                    title="업종 선택"
+                    description="업종을 선택하면 답글에서 업종에 맞는 표현을 사용합니다. 기타(직접입력)를 선택하면 옆 입력칸에 업종명을 적어야 완료로 표시됩니다."
+                    isOpen={openPopover === "industry"}
+                    onToggle={() =>
+                      setOpenPopover((prev) =>
+                        prev === "industry" ? null : "industry"
+                      )
+                    }
+                    onClose={() => setOpenPopover(null)}
+                  />
                 </label>
               </div>
               <div className="grid gap-3 md:grid-cols-[1fr,1fr]">
@@ -1183,7 +1346,7 @@ useEffect(() => {
                 </span>
               </div>
               <div className="grid gap-2 md:grid-cols-2">
-                {toneOptions.map((option) => (
+                {toneOptionsForPlan.map((option) => (
                   <button
                     key={option.id}
                     type="button"
@@ -1547,68 +1710,77 @@ useEffect(() => {
                       placeholder="버그/개선 아이디어를 남겨주세요. (예: 톤이 딱딱해요, 특정 업종 표현 추가 등)"
                       className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
                       value={feedback}
-                      onChange={(e) => setFeedback(e.target.value.slice(0, 500))}
+                      onChange={(e) =>
+                        setFeedback(e.target.value.slice(0, 500))
+                      }
                     />
                     <div className="mt-2 flex justify-end">
                       <button
                         type="button"
                         className="btn-primary px-3 py-1 text-xs disabled:opacity-60"
                         disabled={feedbackSubmitting}
-                      onClick={() => {
-                        const msg = feedback.trim();
-                        if (!msg) {
-                          addToast({
-                            type: "error",
-                            message: "피드백을 입력해주세요.",
-                          });
-                          return;
-                        }
-                        setFeedbackSubmitting(true);
-                        fetch("/api/feedback", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            message: msg,
-                            path: typeof window !== "undefined" ? window.location.pathname : "/",
-                            userAgent:
-                              typeof navigator !== "undefined" ? navigator.userAgent : "",
-                            context: {
-                              industry,
-                              customIndustry,
-                              storeName,
-                              servicesText,
-                              tone,
-                              replyTypes: selectedReplyTypes,
-                              storeTone,
-                              introText,
-                              outroText,
-                              reviewsText,
-                            },
-                          }),
-                        })
-                          .then(async (res) => {
-                            const data = await res.json();
-                            if (!res.ok) throw new Error(data?.error || "저장 실패");
-                            addToast({
-                              type: "success",
-                              message: data?.stored
-                                ? "피드백이 저장되었습니다. 감사합니다!"
-                                : "피드백을 기록했습니다. (Supabase 미설정)",
-                            });
-                            setFeedback("");
-                          })
-                          .catch(() => {
+                        onClick={() => {
+                          const msg = feedback.trim();
+                          if (!msg) {
                             addToast({
                               type: "error",
-                              message: "피드백 저장에 실패했습니다. 잠시 후 다시 시도해주세요.",
+                              message: "피드백을 입력해주세요.",
                             });
+                            return;
+                          }
+                          setFeedbackSubmitting(true);
+                          fetch("/api/feedback", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              message: msg,
+                              path:
+                                typeof window !== "undefined"
+                                  ? window.location.pathname
+                                  : "/",
+                              userAgent:
+                                typeof navigator !== "undefined"
+                                  ? navigator.userAgent
+                                  : "",
+                              context: {
+                                industry,
+                                customIndustry,
+                                storeName,
+                                servicesText,
+                                tone,
+                                replyTypes: selectedReplyTypes,
+                                storeTone,
+                                introText,
+                                outroText,
+                                reviewsText,
+                              },
+                            }),
                           })
-                          .finally(() => setFeedbackSubmitting(false));
-                      }}
-                    >
-                      {feedbackSubmitting ? "제출 중..." : "피드백 제출"}
-                    </button>
-                  </div>
+                            .then(async (res) => {
+                              const data = await res.json();
+                              if (!res.ok)
+                                throw new Error(data?.error || "저장 실패");
+                              addToast({
+                                type: "success",
+                                message: data?.stored
+                                  ? "피드백이 저장되었습니다. 감사합니다!"
+                                  : "피드백을 기록했습니다.",
+                              });
+                              setFeedback("");
+                            })
+                            .catch(() => {
+                              addToast({
+                                type: "error",
+                                message:
+                                  "피드백 저장에 실패했습니다. 잠시 후 다시 시도해주세요.",
+                              });
+                            })
+                            .finally(() => setFeedbackSubmitting(false));
+                        }}
+                      >
+                        {feedbackSubmitting ? "제출 중..." : "피드백 제출"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1660,6 +1832,42 @@ useEffect(() => {
             <path d="M5 15l7-7 7 7" />
           </svg>
         </button>
+      </div>
+      <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col items-center gap-2 px-4 pb-6">
+        <div className="w-full max-w-xl flex items-center justify-center gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-slate-900"
+            checked={autoApply}
+            onChange={(e) => setAutoApply(e.target.checked)}
+          />
+          <span className="flex items-center gap-2 rounded-lg bg-white/70 px-2 py-1 shadow-sm backdrop-blur-sm">
+            <span>자동 추천 적용</span>
+            {autoApply && (
+              <span className="rounded-full bg-amber-100 px-2 py-[2px] text-[11px] font-semibold text-amber-800">
+                추천 톤/유형으로 바로 생성
+              </span>
+            )}
+          </span>
+        </div>
+        {!isAuthed && (
+          <p className="text-xs font-semibold text-rose-600">
+            로그인 후 답글을 생성할 수 있습니다.
+          </p>
+        )}
+        <button
+          className="btn-primary shadow-2xl w-full max-w-xl py-3 text-base rounded-full"
+          disabled={!canSubmit || loading || !isAuthed}
+          onClick={handleSubmit}
+        >
+          {loading && (
+            <span className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-white align-middle" />
+          )}
+          {loading ? "생성 중..." : "답글 생성"}
+        </button>
+        <p className="text-xs text-slate-500">
+          리뷰 붙여넣기와 옵션을 확인한 뒤 눌러주세요.
+        </p>
       </div>
       <div
         className={classNames(
@@ -1772,7 +1980,7 @@ useEffect(() => {
           <div className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-card">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-slate-900">
-                최근 생성 20건
+                최근 생성 10건
               </h3>
               <button
                 type="button"
@@ -1788,84 +1996,61 @@ useEffect(() => {
             <div className="mt-4 max-h-[60vh] space-y-3 overflow-y-auto">
               {recentReplies.length === 0 ? (
                 <p className="text-sm text-slate-500">
-                  아직 저장된 답글이 없습니다. 답글을 생성하면 자동으로 저장됩니다.
+                  아직 저장된 답글이 없습니다. 답글을 생성하면 자동으로
+                  저장됩니다.
                 </p>
               ) : (
                 recentReplies.map((reply, idx) => (
                   <div
                     key={`${idx}-${reply.title}-${reply.text.slice(0, 20)}`}
-                    className="rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm"
+                    className="relative rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm"
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                        <span className="rounded-full bg-slate-200 px-2 py-[2px] font-semibold text-slate-800">
-                          {reply.title || "답글"}
+                    <button
+                      type="button"
+                      aria-label="삭제"
+                      className="absolute right-3 top-3 text-slate-400 hover:text-slate-700"
+                      onClick={() =>
+                        removeRecent(
+                          `${idx}-${reply.title}-${reply.text.slice(0, 8)}`
+                        )
+                      }
+                    >
+                      ×
+                    </button>
+                    <div className="flex items-center gap-2 text-xs text-slate-600">
+                      <span className="rounded-full bg-slate-200 px-2 py-[2px] font-semibold text-slate-800">
+                        {reply.title || "답글"}
+                      </span>
+                      {reply.createdAt && (
+                        <span className="text-[11px] font-semibold text-slate-500">
+                          {new Date(reply.createdAt).toLocaleString()}
                         </span>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn-ghost px-3 py-1 text-xs"
-                        onClick={() => navigator.clipboard.writeText(reply.text)}
-                      >
-                        복사
-                      </button>
+                      )}
                     </div>
                     <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">
                       {reply.text}
                     </p>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-      {recentModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-card">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900">
-                최근 생성 20건
-              </h3>
-              <button
-                type="button"
-                className="btn-ghost px-3 py-1 text-xs"
-                onClick={() => setRecentModalOpen(false)}
-              >
-                닫기
-              </button>
-            </div>
-            <p className="mt-1 text-sm text-slate-600">
-              이 브라우저에서 최근 생성한 답글을 확인하고 복사할 수 있습니다.
-            </p>
-            <div className="mt-4 max-h-[60vh] space-y-3 overflow-y-auto">
-              {recentReplies.length === 0 ? (
-                <p className="text-sm text-slate-500">
-                  아직 저장된 답글이 없습니다. 답글을 생성하면 자동으로 저장됩니다.
-                </p>
-              ) : (
-                recentReplies.map((reply, idx) => (
-                  <div
-                    key={`${idx}-${reply.title}-${reply.text.slice(0, 20)}`}
-                    className="rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                        <span className="rounded-full bg-slate-200 px-2 py-[2px] font-semibold text-slate-800">
-                          {reply.title || "답글"}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn-ghost px-3 py-1 text-xs"
-                        onClick={() => navigator.clipboard.writeText(reply.text)}
-                      >
-                        복사
-                      </button>
+                    <div className="mt-3 flex justify-end">
+                      {(() => {
+                        const key = `${idx}-${reply.title}-${reply.text.slice(
+                          0,
+                          8
+                        )}`;
+                        return (
+                          <button
+                            type="button"
+                            className={classNames(
+                              "btn-ghost px-3 py-1 text-xs",
+                              copiedRecentKey === key &&
+                                "bg-emerald-50 text-emerald-700"
+                            )}
+                            onClick={() => handleCopyRecent(reply.text, key)}
+                          >
+                            {copiedRecentKey === key ? "복사됨" : "복사"}
+                          </button>
+                        );
+                      })()}
                     </div>
-                    <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">
-                      {reply.text}
-                    </p>
                   </div>
                 ))
               )}
@@ -1874,12 +2059,12 @@ useEffect(() => {
         </div>
       )}
       {toasts.length > 0 && (
-        <div className="fixed inset-x-0 top-4 z-50 flex flex-col items-center gap-2 px-4">
+        <div className="fixed inset-x-0 top-4 z-[2147483647] flex flex-col items-center gap-2 px-4 pointer-events-none">
           {toasts.map((toast) => (
             <div
               key={toast.id}
               className={classNames(
-                "w-full max-w-xl rounded-xl px-4 py-3 text-sm font-semibold shadow-2xl",
+                "inline-flex max-w-xl items-center rounded-xl px-4 py-3 text-sm font-semibold shadow-2xl pointer-events-auto",
                 toast.type === "success" && "bg-emerald-600 text-white",
                 toast.type === "error" && "bg-red-600 text-white",
                 toast.type === "info" && "bg-slate-800 text-white"
@@ -1890,37 +2075,6 @@ useEffect(() => {
           ))}
         </div>
       )}
-      <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col items-center gap-2 px-4 pb-6">
-        <div className="w-full max-w-xl flex items-center justify-center gap-2 text-sm text-slate-700">
-          <input
-            type="checkbox"
-            className="h-4 w-4 accent-slate-900"
-            checked={autoApply}
-            onChange={(e) => setAutoApply(e.target.checked)}
-          />
-          <span className="flex items-center gap-2 rounded-lg bg-white/70 px-2 py-1 shadow-sm backdrop-blur-sm">
-            <span>자동 추천 적용</span>
-            {autoApply && (
-              <span className="rounded-full bg-amber-100 px-2 py-[2px] text-[11px] font-semibold text-amber-800">
-                추천 톤/유형으로 바로 생성
-              </span>
-            )}
-          </span>
-        </div>
-        <button
-          className="btn-primary shadow-2xl w-full max-w-xl py-3 text-base rounded-full"
-          disabled={!canSubmit || loading}
-          onClick={handleSubmit}
-        >
-          {loading && (
-            <span className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-white align-middle" />
-          )}
-          {loading ? "생성 중..." : "답글 생성"}
-        </button>
-        <p className="text-xs text-slate-500">
-          리뷰 붙여넣기와 옵션을 확인한 뒤 눌러주세요.
-        </p>
-      </div>
       {openTemplateInfo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-card">
