@@ -10,6 +10,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import classNames from "classnames";
+import Link from "next/link";
 import { signIn, signOut, useSession } from "next-auth/react";
 
 type Tone =
@@ -52,6 +53,12 @@ type TemplateConfig = {
 };
 
 type Plan = "free" | "plus" | "pro";
+
+const planLimits: Record<Plan, number> = {
+  free: 10,
+  plus: 100,
+  pro: Number.POSITIVE_INFINITY,
+};
 type ReplyTypeOption = {
   id: string;
   label: string;
@@ -512,9 +519,19 @@ const fallbackRecommended = ["개인화 응대형", "사실 확인형", "안내�
 
 export default function HomePage() {
   const [plan, setPlan] = useState<Plan>("free");
+  const [testPlan, setTestPlan] = useState<Plan | null>(null);
   const { data: session, status: sessionStatus } = useSession();
   const isAuthed = sessionStatus === "authenticated";
   const isSessionLoading = sessionStatus === "loading";
+  const isTestAuthed = Boolean(testPlan);
+  const isAuthedEffective = isAuthed || isTestAuthed;
+  const activePlan = testPlan ?? plan;
+  const isFreePlan = activePlan === "free";
+  const [usageCount, setUsageCount] = useState(0);
+  const [usageMonth, setUsageMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${now.getMonth() + 1}`;
+  });
   const userDisplayName =
     session?.user?.name || session?.user?.email || "로그인 필요";
   const [industry, setIndustry] = useState("");
@@ -620,6 +637,27 @@ export default function HomePage() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem("savedTemplatesV1", JSON.stringify(templates));
   }, [templates]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${now.getMonth() + 1}`;
+    const raw = window.localStorage.getItem("usageCountsV1");
+    const parsed =
+      raw && typeof raw === "string"
+        ? (JSON.parse(raw) as Record<Plan, { month: string; count: number }>)
+        : {};
+    const entry = parsed[activePlan];
+    if (!entry || entry.month !== currentMonth) {
+      setUsageCount(0);
+      setUsageMonth(currentMonth);
+      parsed[activePlan] = { month: currentMonth, count: 0 };
+      window.localStorage.setItem("usageCountsV1", JSON.stringify(parsed));
+      return;
+    }
+    setUsageCount(entry.count || 0);
+    setUsageMonth(entry.month);
+  }, [activePlan]);
 
   useEffect(() => {
     if (replies && replies.length > 0 && resultRef.current) {
@@ -771,38 +809,38 @@ export default function HomePage() {
 
   const toneOptionsForPlan = useMemo(
     () =>
-      plan === "free"
+      isFreePlan
         ? toneOptions.filter((option) => option.id === "정중형")
         : toneOptions,
-    [plan]
+    [isFreePlan]
   );
 
   useEffect(() => {
     // 자동 추천 적용 시, 추천 톤/유형을 UI에도 반영
     if (!autoApply) return;
     if (recommendedTone) {
-      setTone(plan === "free" ? "정중형" : recommendedTone);
+      setTone(isFreePlan ? "정중형" : recommendedTone);
     }
     if (recommendedTypes.length > 0) {
       setSelectedReplyTypes(recommendedTypes.slice(0, 3));
     }
-  }, [autoApply, recommendedTone, recommendedTypes, plan]);
+  }, [autoApply, recommendedTone, recommendedTypes, isFreePlan]);
 
   const effectiveReplyTypesForSubmit = useMemo(() => {
-    if (plan === "free") return [replyTypeOptions[0].id];
+    if (isFreePlan) return [replyTypeOptions[0].id];
     if (autoApply) {
       if (recommendedTypes.length > 0) return recommendedTypes.slice(0, 3);
       if (selectedReplyTypes.length > 0) return selectedReplyTypes.slice(0, 3);
       return [replyTypeOptions[0].id];
     }
     return selectedReplyTypes.slice(0, 3);
-  }, [autoApply, recommendedTypes, selectedReplyTypes, plan]);
+  }, [autoApply, recommendedTypes, selectedReplyTypes, isFreePlan]);
 
   const effectiveToneForSubmit = useMemo(() => {
-    if (plan === "free") return "정중형";
+    if (isFreePlan) return "정중형";
     if (autoApply && recommendedTone) return recommendedTone;
     return tone;
-  }, [autoApply, recommendedTone, tone, plan]);
+  }, [autoApply, recommendedTone, tone, isFreePlan]);
 
   const canSubmit =
     reviewsText.trim().length > 0 &&
@@ -811,7 +849,7 @@ export default function HomePage() {
     effectiveReplyTypesForSubmit.length <= 3;
 
   const handleSubmit = async () => {
-    if (!isAuthed) {
+    if (!isAuthedEffective) {
       addToast({ type: "error", message: "구글 로그인 후 이용해주세요." });
       return;
     }
@@ -874,6 +912,30 @@ export default function HomePage() {
         setError("답글이 생성되지 않았습니다. 입력을 다시 확인해주세요.");
         addToast({ type: "error", message: "답글이 생성되지 않았습니다." });
       } else {
+        if (planLimits[activePlan] !== Number.POSITIVE_INFINITY) {
+          setUsageCount((prev) => {
+            const next = prev + 1;
+            if (typeof window !== "undefined") {
+              const raw = window.localStorage.getItem("usageCountsV1");
+              const parsed =
+                raw && typeof raw === "string"
+                  ? (JSON.parse(raw) as Record<
+                      Plan,
+                      { month: string; count: number }
+                    >)
+                  : {};
+              const month =
+                usageMonth ||
+                `${new Date().getFullYear()}-${new Date().getMonth() + 1}`;
+              parsed[activePlan] = { month, count: next };
+              window.localStorage.setItem(
+                "usageCountsV1",
+                JSON.stringify(parsed)
+              );
+            }
+            return next;
+          });
+        }
         addToast({ type: "success", message: "답글을 생성했습니다." });
         setTimeout(() => {
           if (resultRef.current) {
@@ -1001,7 +1063,7 @@ export default function HomePage() {
   };
 
   const toggleReplyType = (id: string) => {
-    if (plan === "free" && id !== replyTypeOptions[0].id) {
+    if (isFreePlan && id !== replyTypeOptions[0].id) {
       addToast({
         type: "info",
         message: "무료 플랜에서는 개인화 응대형만 사용할 수 있습니다.",
@@ -1051,6 +1113,13 @@ export default function HomePage() {
       introText,
       outroText,
     };
+    if (isFreePlan && templates.length >= 1) {
+      addToast({
+        type: "error",
+        message: "무료 플랜에서는 템플릿을 1개만 저장할 수 있습니다.",
+      });
+      return;
+    }
     setTemplates((prev) => {
       const filtered = prev.filter((t) => t.name !== name);
       return [payload, ...filtered].slice(0, 20);
@@ -1143,7 +1212,46 @@ export default function HomePage() {
                 리뷰 복붙하고 답글 생성하기로 10초면 끝!
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Link href="/plans" className="btn-ghost">
+                플랜 보기
+              </Link>
+              <div className="flex flex-wrap items-center gap-1 rounded-xl border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
+                <span className="text-slate-500">테스트 플랜:</span>
+                {(["free", "plus", "pro"] as Plan[]).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className={classNames(
+                      "rounded-lg px-2 py-1",
+                      activePlan === p
+                        ? "bg-slate-900 text-white"
+                        : "bg-slate-100 text-slate-700"
+                    )}
+                    onClick={() => {
+                      setTestPlan(p);
+                      addToast({
+                        type: "info",
+                        message: `${p.toUpperCase()} 플랜 테스트 모드`,
+                      });
+                    }}
+                  >
+                    {p === "free" ? "무료" : p === "plus" ? "플러스" : "프로"}
+                  </button>
+                ))}
+                {testPlan && (
+                  <button
+                    type="button"
+                    className="rounded-lg px-2 py-1 text-slate-600 hover:text-slate-900"
+                    onClick={() => {
+                      setTestPlan(null);
+                      addToast({ type: "info", message: "테스트 모드를 해제했습니다." });
+                    }}
+                  >
+                    해제
+                  </button>
+                )}
+              </div>
               {isAuthed ? (
                 <>
                   <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
@@ -1610,25 +1718,27 @@ export default function HomePage() {
                     답글을 확인하고 복사하거나 필요한 부분을 수정할 수 있습니다.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  className="flex items-center gap-1 whitespace-nowrap text-xs font-semibold text-slate-600 hover:text-slate-900"
-                  onClick={() => setRecentModalOpen(true)}
-                >
-                  <span>최근 생성 기록</span>
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    className="h-3.5 w-3.5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+                {activePlan !== "free" && (
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 whitespace-nowrap text-xs font-semibold text-slate-600 hover:text-slate-900"
+                    onClick={() => setRecentModalOpen(true)}
                   >
-                    <path d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
+                    <span>최근 생성 기록</span>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      className="h-3.5 w-3.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                )}
               </div>
               {!replies && (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
@@ -1811,7 +1921,12 @@ export default function HomePage() {
           </svg>
         </button>
       )}
-      <div className="fixed bottom-24 right-4 z-40 flex flex-col gap-2">
+      <div
+        className={classNames(
+          "fixed bottom-24 z-50 flex flex-col gap-2",
+          templateDrawerOpen ? "right-[260px]" : "right-4"
+        )}
+      >
         <button
           type="button"
           className="flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-slate-600 shadow-lg ring-1 ring-slate-200 hover:text-slate-900"
@@ -1835,6 +1950,17 @@ export default function HomePage() {
         </button>
       </div>
       <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col items-center gap-2 px-4 pb-6">
+        <div className="text-xs text-slate-500">
+          {planLimits[activePlan] === Number.POSITIVE_INFINITY ? (
+            <span>현재 플랜: {activePlan.toUpperCase()} · 생성 제한 없음</span>
+          ) : (
+            <span>
+              현재 플랜: {activePlan.toUpperCase()} · 남은 생성{" "}
+              {Math.max(planLimits[activePlan] - usageCount, 0)} /
+              {planLimits[activePlan]} (월간)
+            </span>
+          )}
+        </div>
         <div className="w-full max-w-xl flex items-center justify-center gap-2 text-sm text-slate-700">
           <input
             type="checkbox"
@@ -1851,14 +1977,14 @@ export default function HomePage() {
             )}
           </span>
         </div>
-        {!isAuthed && (
+        {!isAuthedEffective && (
           <p className="text-xs font-semibold text-rose-600">
             로그인 후 답글을 생성할 수 있습니다.
           </p>
         )}
         <button
           className="btn-primary shadow-2xl w-full max-w-xl py-3 text-base rounded-full"
-          disabled={!canSubmit || loading || !isAuthed}
+          disabled={!canSubmit || loading || !isAuthedEffective}
           onClick={handleSubmit}
         >
           {loading && (
