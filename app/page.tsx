@@ -645,7 +645,9 @@ export default function HomePage() {
     const raw = window.localStorage.getItem("usageCountsV1");
     const parsed =
       raw && typeof raw === "string"
-        ? (JSON.parse(raw) as Record<Plan, { month: string; count: number }>)
+        ? (JSON.parse(raw) as Partial<
+            Record<Plan, { month: string; count: number }>
+          >)
         : {};
     const entry = parsed[activePlan];
     if (!entry || entry.month !== currentMonth) {
@@ -919,9 +921,8 @@ export default function HomePage() {
               const raw = window.localStorage.getItem("usageCountsV1");
               const parsed =
                 raw && typeof raw === "string"
-                  ? (JSON.parse(raw) as Record<
-                      Plan,
-                      { month: string; count: number }
+                  ? (JSON.parse(raw) as Partial<
+                      Record<Plan, { month: string; count: number }>
                     >)
                   : {};
               const month =
