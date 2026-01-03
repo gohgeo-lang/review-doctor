@@ -13,8 +13,8 @@ const handler = NextAuth({
     async jwt({ token, account, profile }) {
       if (account && profile) {
         token.name = profile.name;
-        // @ts-expect-error email may be string | null
-        token.email = profile.email;
+        token.email =
+          typeof profile.email === "string" ? profile.email : undefined;
       }
       return token;
     },

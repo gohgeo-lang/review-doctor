@@ -514,6 +514,7 @@ export default function HomePage() {
   const [plan, setPlan] = useState<Plan>("free");
   const { data: session, status: sessionStatus } = useSession();
   const isAuthed = sessionStatus === "authenticated";
+  const isSessionLoading = sessionStatus === "loading";
   const userDisplayName =
     session?.user?.name || session?.user?.email || "로그인 필요";
   const [industry, setIndustry] = useState("");
@@ -1152,7 +1153,7 @@ export default function HomePage() {
                     type="button"
                     className="btn-ghost"
                     onClick={() => signOut()}
-                    disabled={sessionStatus === "loading"}
+                    disabled={isSessionLoading}
                   >
                     로그아웃
                   </button>
@@ -1162,7 +1163,7 @@ export default function HomePage() {
                   type="button"
                   className="btn-primary"
                   onClick={() => signIn("google", { callbackUrl: "/" })}
-                  disabled={sessionStatus === "loading"}
+                  disabled={isSessionLoading}
                 >
                   로그인/회원가입
                 </button>
