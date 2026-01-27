@@ -1,6 +1,18 @@
-import Link from "next/link";
+ "use client";
 
-const plans = [
+import Link from "next/link";
+import { useState } from "react";
+
+type PlanCard = {
+  id: "free" | "plus" | "pro";
+  name: string;
+  price: string;
+  cta: string;
+  highlight?: boolean;
+  features: string[];
+};
+
+const plans: PlanCard[] = [
   {
     id: "free",
     name: "무료",
@@ -18,7 +30,7 @@ const plans = [
     id: "plus",
     name: "플러스",
     price: "₩900 /월 (부가세 별도)",
-    cta: "구독 준비 중",
+    cta: "결제 진행",
     highlight: true,
     features: [
       "월 100건 생성",
@@ -31,7 +43,7 @@ const plans = [
     id: "pro",
     name: "프로",
     price: "₩1,900 /월 (부가세 별도)",
-    cta: "구독 준비 중",
+    cta: "결제 진행",
     highlight: false,
     features: [
       "무제한 생성",
@@ -43,6 +55,30 @@ const plans = [
 ];
 
 export default function PlansPage() {
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const startCheckout = async (plan: PlanCard) => {
+    setError(null);
+    setLoadingId(plan.id);
+    try {
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: plan.id }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.redirectUrl) {
+        throw new Error(data?.error || "결제 세션을 만들지 못했습니다.");
+      }
+      window.location.href = data.redirectUrl;
+    } catch (err: any) {
+      setError(err?.message || "결제 요청 중 오류가 발생했습니다.");
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
   return (
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-8 px-6 py-12">
       <header className="flex flex-col gap-2">
@@ -52,8 +88,12 @@ export default function PlansPage() {
         <h1 className="text-3xl font-bold text-slate-900">요금제 안내</h1>
         <p className="text-base text-slate-600">
           무료는 월 10건, 기본 톤과 개인화 응대형만 제공합니다. 플러스/프로는
-          모든 기능과 더 많은 건수를 제공합니다.
+          모든 기능과 더 많은 건수를 제공합니다. 결제는 준비된 PG 연동 시 실제로
+          진행됩니다.
         </p>
+        {error && (
+          <p className="text-sm font-semibold text-rose-600">{error}</p>
+        )}
       </header>
 
       <section className="grid gap-4 md:grid-cols-3">
@@ -100,17 +140,31 @@ export default function PlansPage() {
                 </li>
               ))}
             </ul>
-            <button
-              type="button"
-              disabled
-              className={`mt-6 w-full rounded-xl px-4 py-2 text-sm font-semibold ${
-                plan.highlight
-                  ? "bg-white text-slate-900"
-                  : "bg-slate-900 text-white"
-              } opacity-70`}
-            >
-              {plan.cta}
-            </button>
+            {plan.id === "free" ? (
+              <Link
+                href="/"
+                className={`mt-6 flex w-full items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold ${
+                  plan.highlight
+                    ? "bg-white text-slate-900"
+                    : "bg-slate-900 text-white"
+                }`}
+              >
+                {plan.cta}
+              </Link>
+            ) : (
+              <button
+                type="button"
+                className={`mt-6 w-full rounded-xl px-4 py-2 text-sm font-semibold ${
+                  plan.highlight
+                    ? "bg-white text-slate-900"
+                    : "bg-slate-900 text-white"
+                } ${loadingId === plan.id ? "opacity-70" : ""}`}
+                onClick={() => startCheckout(plan)}
+                disabled={loadingId === plan.id}
+              >
+                {loadingId === plan.id ? "결제 세션 생성 중..." : plan.cta}
+              </button>
+            )}
           </div>
         ))}
       </section>
