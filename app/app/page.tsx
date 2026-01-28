@@ -52,13 +52,7 @@ type TemplateConfig = {
   outroText: string;
 };
 
-type Plan = "free" | "plus" | "pro";
-
-const planLimits: Record<Plan, number> = {
-  free: 10,
-  plus: 100,
-  pro: Number.POSITIVE_INFINITY,
-};
+type Plan = "free" | "plus";
 type ReplyTypeOption = {
   id: string;
   label: string;
@@ -521,20 +515,11 @@ const replyTypeKeywords: Record<string, string[]> = {
 const fallbackRecommended = ["개인화 응대형", "사실 확인형", "안내형"];
 
 export default function HomePage() {
-  const [plan, setPlan] = useState<Plan>("free");
-  const [testPlan, setTestPlan] = useState<Plan | null>(null);
   const { data: session, status: sessionStatus } = useSession();
   const isAuthed = sessionStatus === "authenticated";
   const isSessionLoading = sessionStatus === "loading";
-  const isTestAuthed = Boolean(testPlan);
-  const isAuthedEffective = isAuthed || isTestAuthed;
-  const activePlan = testPlan ?? plan;
+  const activePlan: Plan = "free";
   const isFreePlan = activePlan === "free";
-  const [usageCount, setUsageCount] = useState(0);
-  const [usageMonth, setUsageMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${now.getMonth() + 1}`;
-  });
   const userDisplayName =
     session?.user?.name || session?.user?.email || "로그인 필요";
   const [industry, setIndustry] = useState("");
@@ -642,29 +627,6 @@ export default function HomePage() {
   }, [templates]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const now = new Date();
-    const currentMonth = `${now.getFullYear()}-${now.getMonth() + 1}`;
-    const raw = window.localStorage.getItem("usageCountsV1");
-    const parsed =
-      raw && typeof raw === "string"
-        ? (JSON.parse(raw) as Partial<
-            Record<Plan, { month: string; count: number }>
-          >)
-        : {};
-    const entry = parsed[activePlan];
-    if (!entry || entry.month !== currentMonth) {
-      setUsageCount(0);
-      setUsageMonth(currentMonth);
-      parsed[activePlan] = { month: currentMonth, count: 0 };
-      window.localStorage.setItem("usageCountsV1", JSON.stringify(parsed));
-      return;
-    }
-    setUsageCount(entry.count || 0);
-    setUsageMonth(entry.month);
-  }, [activePlan]);
-
-  useEffect(() => {
     if (replies && replies.length > 0 && resultRef.current) {
       resultRef.current.scrollIntoView({
         behavior: "smooth",
@@ -692,16 +654,6 @@ export default function HomePage() {
   const hasReplyTypes = selectedReplyTypes.length > 0;
   const generateIntro = true;
   const generateOutro = true;
-  const reviewCharCount = reviewsText.trim().length;
-  const usageCost = reviewCharCount > 0 ? Math.ceil(reviewCharCount / 200) : 0;
-  const remainingQuota =
-    planLimits[activePlan] === Number.POSITIVE_INFINITY
-      ? Number.POSITIVE_INFINITY
-      : Math.max(planLimits[activePlan] - usageCount, 0);
-  const exceedsQuota =
-    remainingQuota !== Number.POSITIVE_INFINITY &&
-    usageCost > 0 &&
-    usageCost > remainingQuota;
 
   const addToast = (toast: Omit<Toast, "id">) => {
     const id = Date.now();
@@ -861,20 +813,9 @@ export default function HomePage() {
     reviewsText.trim().length > 0 &&
     effectiveIndustry.length > 0 &&
     effectiveReplyTypesForSubmit.length > 0 &&
-    effectiveReplyTypesForSubmit.length <= 3 &&
-    !exceedsQuota;
+    effectiveReplyTypesForSubmit.length <= 3;
 
   const handleSubmit = async () => {
-    if (!isAuthedEffective) {
-      addToast({ type: "error", message: "구글 로그인 후 이용해주세요." });
-      return;
-    }
-    if (exceedsQuota) {
-      const msg = `이번 요청은 ${usageCost}회 차감됩니다. 남은 생성 횟수가 부족합니다.`;
-      setError(msg);
-      addToast({ type: "error", message: msg });
-      return;
-    }
     if (!canSubmit) {
       setError("리뷰와 업종, 답글 유형(최소 1개, 최대 3개)을 선택해주세요.");
       return;
@@ -934,29 +875,6 @@ export default function HomePage() {
         setError("답글이 생성되지 않았습니다. 입력을 다시 확인해주세요.");
         addToast({ type: "error", message: "답글이 생성되지 않았습니다." });
       } else {
-        if (planLimits[activePlan] !== Number.POSITIVE_INFINITY) {
-          setUsageCount((prev) => {
-            const next = prev + usageCost;
-            if (typeof window !== "undefined") {
-              const raw = window.localStorage.getItem("usageCountsV1");
-              const parsed =
-                raw && typeof raw === "string"
-                  ? (JSON.parse(raw) as Partial<
-                      Record<Plan, { month: string; count: number }>
-                    >)
-                  : {};
-              const month =
-                usageMonth ||
-                `${new Date().getFullYear()}-${new Date().getMonth() + 1}`;
-              parsed[activePlan] = { month, count: next };
-              window.localStorage.setItem(
-                "usageCountsV1",
-                JSON.stringify(parsed)
-              );
-            }
-            return next;
-          });
-        }
         addToast({ type: "success", message: "답글을 생성했습니다." });
         setTimeout(() => {
           if (resultRef.current) {
@@ -1936,15 +1854,7 @@ export default function HomePage() {
       </div>
       <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col items-center gap-2 px-4 pb-6">
         <div className="text-xs text-slate-500">
-          {planLimits[activePlan] === Number.POSITIVE_INFINITY ? (
-            <span>현재 플랜: {activePlan.toUpperCase()} · 생성 제한 없음</span>
-          ) : (
-            <span>
-              현재 플랜: {activePlan.toUpperCase()} · 남은 생성{" "}
-              {remainingQuota} /
-              {planLimits[activePlan]} (월간)
-            </span>
-          )}
+          <span>현재 플랜: {activePlan.toUpperCase()} · 생성 제한 없음</span>
         </div>
         <div className="w-full max-w-xl flex items-center justify-center gap-2 text-sm text-slate-700">
           <input
@@ -1962,14 +1872,9 @@ export default function HomePage() {
             )}
           </span>
         </div>
-        {!isAuthedEffective && (
-          <p className="text-xs font-semibold text-rose-600">
-            로그인 후 답글을 생성할 수 있습니다.
-          </p>
-        )}
         <button
           className="btn-primary shadow-2xl w-full max-w-xl py-3 text-base rounded-full"
-          disabled={!canSubmit || loading || !isAuthedEffective}
+          disabled={!canSubmit || loading}
           onClick={handleSubmit}
         >
           {loading && (
@@ -1980,11 +1885,6 @@ export default function HomePage() {
         <p className="text-xs text-slate-500">
           리뷰 붙여넣기와 옵션을 확인한 뒤 눌러주세요.
         </p>
-        {usageCost > 0 && planLimits[activePlan] !== Number.POSITIVE_INFINITY && (
-          <p className="text-xs text-slate-500">
-            이번 요청 차감: {usageCost}회 (200자당 1회)
-          </p>
-        )}
       </div>
       <div
         className={classNames(

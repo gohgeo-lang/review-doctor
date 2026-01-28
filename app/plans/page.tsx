@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 type PlanCard = {
-  id: "free" | "plus" | "pro";
+  id: "free" | "plus";
   name: string;
   price: string;
   cta: string;
@@ -20,36 +20,24 @@ const plans: PlanCard[] = [
     cta: "무료로 사용",
     highlight: false,
     features: [
-      "월 10건 생성",
+      "로그인 없이 바로 사용",
+      "무제한 생성",
       "기본 톤(정중형)",
       "개인화 응대형 답글 유형만 사용",
-      "로그인 필수",
+      "광고 표시",
     ],
   },
   {
     id: "plus",
-    name: "플러스",
-    price: "₩900 /월 (부가세 별도)",
+    name: "구독",
+    price: "₩3,900 /월 (부가세 별도)",
     cta: "결제 진행",
     highlight: true,
     features: [
-      "월 100건 생성",
+      "광고 제거",
       "모든 톤 선택 가능",
       "모든 답글 유형 사용",
       "템플릿/최근 기록/자동 추천",
-    ],
-  },
-  {
-    id: "pro",
-    name: "프로",
-    price: "₩1,900 /월 (부가세 별도)",
-    cta: "결제 진행",
-    highlight: false,
-    features: [
-      "무제한 생성",
-      "모든 기능 무제한",
-      "고객 지원 우선 처리",
-      "향후 팀 계정/권한 관리 포함 예정",
     ],
   },
 ];
@@ -87,9 +75,9 @@ export default function PlansPage() {
         </p>
         <h1 className="text-3xl font-bold text-slate-900">요금제 안내</h1>
         <p className="text-base text-slate-600">
-          무료는 월 10건, 기본 톤과 개인화 응대형만 제공합니다. 플러스/프로는
-          모든 기능과 더 많은 건수를 제공합니다. 결제는 준비된 PG 연동 시 실제로
-          진행됩니다.
+          무료는 로그인 없이 바로 사용할 수 있고, 기본 톤과 개인화 응대형만
+          제공합니다. 구독하면 광고 제거와 모든 기능이 열립니다. 결제는 준비된
+          PG 연동 시 실제로 진행됩니다.
         </p>
         {error && (
           <p className="text-sm font-semibold text-rose-600">{error}</p>

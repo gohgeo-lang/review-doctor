@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const validPlans = ["free", "plus", "pro"] as const;
+const validPlans = ["plus"] as const;
 
 export async function POST(request: Request) {
   try {
