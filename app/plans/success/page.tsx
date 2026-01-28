@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 
-export default function PlanSuccessPage() {
+const PlanSuccessContent = () => {
   const search = useSearchParams();
   const plan = search.get("plan") || "plus";
 
@@ -23,5 +24,22 @@ export default function PlanSuccessPage() {
         </Link>
       </div>
     </main>
+  );
+};
+
+export default function PlanSuccessPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-6 py-12">
+          <h1 className="text-2xl font-bold text-emerald-700">
+            결제 완료(모의)
+          </h1>
+          <p className="text-slate-700">불러오는 중...</p>
+        </main>
+      }
+    >
+      <PlanSuccessContent />
+    </Suspense>
   );
 }
