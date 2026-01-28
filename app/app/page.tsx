@@ -692,6 +692,16 @@ export default function HomePage() {
   const hasReplyTypes = selectedReplyTypes.length > 0;
   const generateIntro = true;
   const generateOutro = true;
+  const reviewCharCount = reviewsText.trim().length;
+  const usageCost = reviewCharCount > 0 ? Math.ceil(reviewCharCount / 200) : 0;
+  const remainingQuota =
+    planLimits[activePlan] === Number.POSITIVE_INFINITY
+      ? Number.POSITIVE_INFINITY
+      : Math.max(planLimits[activePlan] - usageCount, 0);
+  const exceedsQuota =
+    remainingQuota !== Number.POSITIVE_INFINITY &&
+    usageCost > 0 &&
+    usageCost > remainingQuota;
 
   const addToast = (toast: Omit<Toast, "id">) => {
     const id = Date.now();
@@ -851,11 +861,18 @@ export default function HomePage() {
     reviewsText.trim().length > 0 &&
     effectiveIndustry.length > 0 &&
     effectiveReplyTypesForSubmit.length > 0 &&
-    effectiveReplyTypesForSubmit.length <= 3;
+    effectiveReplyTypesForSubmit.length <= 3 &&
+    !exceedsQuota;
 
   const handleSubmit = async () => {
     if (!isAuthedEffective) {
       addToast({ type: "error", message: "구글 로그인 후 이용해주세요." });
+      return;
+    }
+    if (exceedsQuota) {
+      const msg = `이번 요청은 ${usageCost}회 차감됩니다. 남은 생성 횟수가 부족합니다.`;
+      setError(msg);
+      addToast({ type: "error", message: msg });
       return;
     }
     if (!canSubmit) {
@@ -919,7 +936,7 @@ export default function HomePage() {
       } else {
         if (planLimits[activePlan] !== Number.POSITIVE_INFINITY) {
           setUsageCount((prev) => {
-            const next = prev + 1;
+            const next = prev + usageCost;
             if (typeof window !== "undefined") {
               const raw = window.localStorage.getItem("usageCountsV1");
               const parsed =
@@ -1924,7 +1941,7 @@ export default function HomePage() {
           ) : (
             <span>
               현재 플랜: {activePlan.toUpperCase()} · 남은 생성{" "}
-              {Math.max(planLimits[activePlan] - usageCount, 0)} /
+              {remainingQuota} /
               {planLimits[activePlan]} (월간)
             </span>
           )}
@@ -1963,6 +1980,11 @@ export default function HomePage() {
         <p className="text-xs text-slate-500">
           리뷰 붙여넣기와 옵션을 확인한 뒤 눌러주세요.
         </p>
+        {usageCost > 0 && planLimits[activePlan] !== Number.POSITIVE_INFINITY && (
+          <p className="text-xs text-slate-500">
+            이번 요청 차감: {usageCost}회 (200자당 1회)
+          </p>
+        )}
       </div>
       <div
         className={classNames(
